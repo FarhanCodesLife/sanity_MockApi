@@ -1,13 +1,25 @@
-import { createClient } from 'next-sanity'
-
-import { apiVersion, dataset, projectId } from '../env'
+import { createClient } from 'next-sanity';
+import { apiVersion, dataset, projectId, apiToken } from '../env';
 
 export const client = createClient({
   projectId,
   dataset,
   apiVersion,
-  useCdn: true, // Set to false if statically generating pages or using ISR
-})
+  useCdn: true,
+  token: apiToken, // Use the API token with write permissions
+});
+
+// Function to upload image to Sanity's Asset Store
+const uploadImageToSanity = async (imageUrl) => {
+  const res = await fetch(imageUrl);
+  const blob = await res.blob();
+
+  const imageAsset = await client.assets.upload('image', blob, {
+    filename: `product-image-${Date.now()}.jpg`, // Use a unique filename for each image
+  });
+
+  return imageAsset;
+};
 
 const migrateDataToSanity = async () => {
   try {
@@ -24,13 +36,17 @@ const migrateDataToSanity = async () => {
 
     // Loop through products and add to Sanity
     for (const product of products) {
+      // Upload the product image to Sanity
+      const imageAsset = await uploadImageToSanity(product.image);
+
+      // Construct the document with the uploaded image reference
       const doc = {
         _type: "product", // Ensure this matches your Sanity schema
         name: product.name,
         image: {
           _type: 'image',
           asset: {
-            _ref: 'image-asset-id', // Replace with your image handling logic
+            _ref: imageAsset._id, // Reference the uploaded image
             _type: 'reference',
           },
         },
@@ -40,7 +56,7 @@ const migrateDataToSanity = async () => {
         color: product.color,
       };
 
-      // Ensure you handle image references if needed
+      // Create the product document in Sanity
       const result = await client.create(doc);
       console.log("Product added:", result);
     }
